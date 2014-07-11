@@ -148,6 +148,9 @@ public class Validator
             sb.append("Schema (control): " + queryPair.getControl().getSchema() + "\n");
             sb.append("TIMEOUT\n");
         }
+        else {
+            sb.append("SKIPPED");
+        }
         return sb.toString();
     }
 
@@ -180,10 +183,12 @@ public class Validator
 
         // query has too many rows. Consider blacklisting.
         if (controlResult.getState() == State.TOO_MANY_ROWS) {
+            testResult = new QueryResult(State.INVALID, null, null, ImmutableList.<List<Object>>of());
             return false;
         }
         // query failed in the control
         else if (controlResult.getState() != State.SUCCESS) {
+            testResult = new QueryResult(State.INVALID, null, null, ImmutableList.<List<Object>>of());
             return true;
         }
 
@@ -232,7 +237,7 @@ public class Validator
     private QueryResult executeQuery(String url, String username, String password, Query query, Duration timeout)
     {
         try (Connection connection = DriverManager.getConnection(url, username, password)) {
-            connection.setClientInfo("ApplicationName", "verifier-test-" + queryPair.getName());
+            connection.setClientInfo("ApplicationName", "verifier-test:" + queryPair.getName());
             connection.setCatalog(query.getCatalog());
             connection.setSchema(query.getSchema());
             long start = System.nanoTime();
@@ -395,7 +400,9 @@ public class Validator
             @Override
             public int compare(List<Object> a, List<Object> b)
             {
-                checkArgument(a.size() == b.size(), "list sizes do not match");
+                if (a.size() != b.size()) {
+                    return Integer.compare(a.size(), b.size());
+                }
                 for (int i = 0; i < a.size(); i++) {
                     int r = comparator.compare(a.get(i), b.get(i));
                     if (r != 0) {
