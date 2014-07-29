@@ -134,7 +134,7 @@ public class LocalQueryRunner
         this.indexManager = new IndexManager();
         this.recordSinkManager = new RecordSinkManager();
 
-        this.compiler = new ExpressionCompiler(metadata, new CompilerConfig());
+        this.compiler = new ExpressionCompiler(metadata);
 
         // sys schema
         SystemTablesMetadata systemTablesMetadata = new SystemTablesMetadata();
@@ -207,7 +207,7 @@ public class LocalQueryRunner
         connectorManager.createConnection(catalogName, connectorFactory, properties);
     }
 
-    public QueryRunner printPlan()
+    public LocalQueryRunner printPlan()
     {
         printPlan = true;
         return this;

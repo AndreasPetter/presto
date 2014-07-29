@@ -69,11 +69,7 @@ public abstract class AbstractTestQueries
         extends AbstractTestQueryFramework
 {
     protected static final List<FunctionInfo> CUSTOM_FUNCTIONS = new FunctionRegistry.FunctionListBuilder()
-            .aggregate("custom_sum",
-                    BIGINT,
-                    ImmutableList.of(BIGINT),
-                    BIGINT,
-                    new CustomSum())
+            .aggregate(CustomSum.class)
             .window("custom_rank", BIGINT, ImmutableList.<Type>of(), CustomRank.class)
             .scalar(CustomAdd.class)
             .scalar(CreateHll.class)
@@ -515,6 +511,9 @@ public abstract class AbstractTestQueries
             throws Exception
     {
         assertQuery("SELECT COUNT(*) FROM ORDERS");
+        assertQuery("SELECT COUNT(42) FROM ORDERS", "SELECT COUNT(*) FROM ORDERS");
+        assertQuery("SELECT COUNT(42 + 42) FROM ORDERS", "SELECT COUNT(*) FROM ORDERS");
+        assertQuery("SELECT COUNT(null) FROM ORDERS", "SELECT 0");
     }
 
     @Test
@@ -3079,11 +3078,11 @@ public abstract class AbstractTestQueries
     {
         DescriptiveStatistics stats = new DescriptiveStatistics();
 
-        int total = computeExpected("SELECT orderkey FROM orders", ImmutableList.of(BIGINT)).getMaterializedRows().size();
+        long total = (long) computeExpected("SELECT COUNT(*) FROM orders", ImmutableList.of(BIGINT)).getMaterializedRows().get(0).getField(0);
 
         for (int i = 0; i < 100; i++) {
-            List<MaterializedRow> values = computeActual("SELECT orderkey FROM ORDERS TABLESAMPLE POISSONIZED (50)").getMaterializedRows();
-            stats.addValue(values.size() * 1.0 / total);
+            String value = (String) computeActual("SELECT COUNT(*) FROM orders TABLESAMPLE POISSONIZED (50) APPROXIMATE AT 95 CONFIDENCE").getMaterializedRows().get(0).getField(0);
+            stats.addValue(Long.parseLong(value.split(" ")[0]) * 1.0 / total);
         }
 
         double mean = stats.getGeometricMean();

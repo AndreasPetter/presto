@@ -14,14 +14,12 @@
 package com.facebook.presto.spi.type;
 
 import com.facebook.presto.spi.ConnectorSession;
+import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockBuilder;
 import com.facebook.presto.spi.block.BlockBuilderStatus;
-import com.facebook.presto.spi.block.BlockEncodingFactory;
 import com.facebook.presto.spi.block.VariableWidthBlockBuilder;
-import com.facebook.presto.spi.block.VariableWidthBlockEncoding;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import io.airlift.slice.Slice;
-import io.airlift.slice.SliceOutput;
 
 // Layout is <size>:<hll>, where
 //   size: is a short describing the length of the hll bytes
@@ -30,8 +28,6 @@ public class HyperLogLogType
         implements VariableWidthType
 {
     public static final HyperLogLogType HYPER_LOG_LOG = new HyperLogLogType();
-
-    public static final BlockEncodingFactory<?> BLOCK_ENCODING_FACTORY = new VariableWidthBlockEncoding.VariableWidthBlockEncodingFactory(HYPER_LOG_LOG);
 
     public static HyperLogLogType getInstance()
     {
@@ -50,58 +46,121 @@ public class HyperLogLogType
     }
 
     @Override
+    public boolean isComparable()
+    {
+        return false;
+    }
+
+    @Override
+    public boolean isOrderable()
+    {
+        return false;
+    }
+
+    @Override
     public Class<?> getJavaType()
     {
         return Slice.class;
     }
 
     @Override
-    public Slice getSlice(Slice slice, int offset, int length)
-    {
-        return slice.slice(offset, length);
-    }
-
-    @Override
-    public int writeSlice(SliceOutput sliceOutput, Slice value, int offset, int length)
-    {
-        sliceOutput.writeBytes(value, offset, length);
-        return length;
-    }
-
-    @Override
-    public boolean equalTo(Slice leftSlice, int leftOffset, int leftLength, Slice rightSlice, int rightOffset, int rightLength)
+    public boolean equalTo(Block leftBlock, int leftPosition, Block rightBlock, int rightPosition)
     {
         throw new UnsupportedOperationException("HyperLogLog type is not comparable");
     }
 
     @Override
-    public int hash(Slice slice, int offset, int length)
+    public int hash(Block block, int position)
     {
         throw new UnsupportedOperationException("HyperLogLog type is not comparable");
     }
 
     @Override
-    public int compareTo(Slice leftSlice, int leftOffset, int leftLength, Slice rightSlice, int rightOffset, int rightLength)
+    public int compareTo(Block leftBlock, int leftPosition, Block rightBlock, int rightPosition)
     {
         throw new UnsupportedOperationException("HyperLogLog type is not ordered");
     }
 
     @Override
-    public void appendTo(Slice slice, int offset, int length, BlockBuilder blockBuilder)
+    public void appendTo(Block block, int position, BlockBuilder blockBuilder)
     {
-        blockBuilder.appendSlice(slice, offset, length);
+        if (block.isNull(position)) {
+            blockBuilder.appendNull();
+        }
+        else {
+            block.writeBytesTo(position, 0, block.getLength(position), blockBuilder);
+            blockBuilder.closeEntry();
+        }
     }
 
     @Override
-    public Object getObjectValue(ConnectorSession session, Slice slice, int offset, int length)
+    public boolean getBoolean(Block block, int position)
     {
-        return "<HyperLogLog>";
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void writeBoolean(BlockBuilder sliceOutput, boolean value)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public long getLong(Block block, int position)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void writeLong(BlockBuilder sliceOutput, long value)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public double getDouble(Block block, int position)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void writeDouble(BlockBuilder sliceOutput, double value)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Slice getSlice(Block block, int position)
+    {
+        return block.getSlice(position, 0, block.getLength(position));
+    }
+
+    @Override
+    public void writeSlice(BlockBuilder blockBuilder, Slice value)
+    {
+        writeSlice(blockBuilder, value, 0, value.length());
+    }
+
+    @Override
+    public void writeSlice(BlockBuilder blockBuilder, Slice value, int offset, int length)
+    {
+        blockBuilder.writeBytes(value, offset, length).closeEntry();
+    }
+
+    @Override
+    public Object getObjectValue(ConnectorSession session, Block block, int position)
+    {
+        if (block.isNull(position)) {
+            return null;
+        }
+
+        return new SqlVarbinary(block.getSlice(position, 0, block.getLength(position)).getBytes());
     }
 
     @Override
     public BlockBuilder createBlockBuilder(BlockBuilderStatus blockBuilderStatus)
     {
-        return new VariableWidthBlockBuilder(this, blockBuilderStatus);
+        return new VariableWidthBlockBuilder(blockBuilderStatus);
     }
 
     @Override
