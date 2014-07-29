@@ -13,13 +13,15 @@
  */
 package com.facebook.presto.spi;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import io.airlift.slice.Slice;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Objects;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * A point on the continuous space defined by the specified type.
@@ -118,6 +120,9 @@ public final class Marker
     @JsonIgnore
     public Class<?> getType()
     {
+        if (Slice.class.isAssignableFrom(this.type)) {
+            return String.class;
+        }
         return type;
     }
 
@@ -127,12 +132,18 @@ public final class Marker
         if (value == null) {
             throw new IllegalStateException("Can not get value for unbounded");
         }
+        if (Slice.class.isAssignableFrom(getType())) {
+            return ((Slice) value).toStringUtf8();
+        }
         return value;
     }
 
     @JsonProperty("value")
     public SerializableNativeValue getSerializableNativeValue()
     {
+        if (getType().isAssignableFrom(Slice.class)) {
+            return new SerializableNativeValue(String.class, ((Slice) value).toStringUtf8());
+        }
         return new SerializableNativeValue(type, value);
     }
 
@@ -156,7 +167,7 @@ public final class Marker
 
     private void checkTypeCompatibility(Marker marker)
     {
-        if (!type.equals(marker.getType())) {
+        if (!getType().equals(marker.getType())) {
             throw new IllegalArgumentException(String.format("Mismatched Marker types: %s vs %s", type, marker.getType()));
         }
     }
@@ -250,8 +261,19 @@ public final class Marker
     @SuppressWarnings({ "unchecked", "rawtypes" })
     private static int compare(Comparable<?> value1, Comparable<?> value2)
     {
+        Comparable comp1 = (Comparable) value1;
+        Comparable comp2 = (Comparable) value2;
+
+        // special case: Slices are Strings?
+        if (value1 instanceof Slice) {
+            comp1 = ((Slice) value1).toStringUtf8();
+        }
+        if (value2 instanceof Slice) {
+            comp2 = ((Slice) value2).toStringUtf8();
+        }
+
         // This is terrible, but it should be safe as we have checked the compatibility in the constructor
-        return ((Comparable) value1).compareTo(value2);
+        return comp1.compareTo(comp2);
     }
 
     public static Marker min(Marker marker1, Marker marker2)
@@ -280,7 +302,14 @@ public final class Marker
             return false;
         }
         final Marker other = (Marker) obj;
-        return Objects.equals(this.type, other.type) && Objects.equals(this.value, other.value) && Objects.equals(this.bound, other.bound);
+        boolean checkValues = false;
+        if (this.value != null && other.value != null) {
+            checkValues = Objects.equals(this.getValue(), other.getValue());
+        }
+        else {
+            checkValues = Objects.equals(this.value, other.value);
+        }
+        return Objects.equals(this.getType(), other.getType()) && checkValues && Objects.equals(this.bound, other.bound);
     }
 
     @Override

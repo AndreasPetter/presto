@@ -17,6 +17,8 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import io.airlift.slice.Slice;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -93,6 +95,9 @@ public final class SortedRangeSet
     @JsonProperty
     public Class<?> getType()
     {
+        if (Slice.class.isAssignableFrom(this.type)) {
+            return String.class;
+        }
         return type;
     }
 

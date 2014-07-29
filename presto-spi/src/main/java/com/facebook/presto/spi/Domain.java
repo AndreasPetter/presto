@@ -17,6 +17,8 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import io.airlift.slice.Slice;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -191,7 +193,7 @@ public final class Domain
 
     private void checkTypeCompatibility(Domain domain)
     {
-        if (!getType().equals(domain.getType())) {
+        if (!(getType().equals(domain.getType()) || getType() == Slice.class && domain.getType() == String.class || getType() == String.class && domain.getType() == Slice.class)) {
             throw new IllegalArgumentException(String.format("Mismatched Domain types: %s vs %s", getType(), domain.getType()));
         }
     }

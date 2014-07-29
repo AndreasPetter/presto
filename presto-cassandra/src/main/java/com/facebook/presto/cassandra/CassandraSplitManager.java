@@ -22,8 +22,10 @@ import static com.google.common.base.Predicates.in;
 import static com.google.common.base.Predicates.not;
 import static com.google.common.util.concurrent.MoreExecutors.listeningDecorator;
 import io.airlift.log.Logger;
+import io.airlift.slice.Slice;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,9 +46,12 @@ import com.facebook.presto.spi.ConnectorTableHandle;
 import com.facebook.presto.spi.Domain;
 import com.facebook.presto.spi.FixedSplitSource;
 import com.facebook.presto.spi.HostAddress;
+import com.facebook.presto.spi.Marker;
 import com.facebook.presto.spi.Marker.Bound;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.Range;
+import com.facebook.presto.spi.SerializableNativeValue;
+import com.facebook.presto.spi.SortedRangeSet;
 import com.facebook.presto.spi.TupleDomain;
 import com.google.common.base.Objects;
 import com.google.common.base.Predicate;
@@ -311,10 +316,15 @@ public class CassandraSplitManager
                 Comparable<?> value = range.getSingleValue();
 
                 // todo should we just skip partition pruning instead of throwing an exception?
-                checkArgument(value instanceof Boolean || value instanceof String || value instanceof Double || value instanceof Long,
+                checkArgument(value instanceof Boolean || value instanceof String || value instanceof Slice || value instanceof Double || value instanceof Long,
                         "Only Boolean, String, Double and Long partition keys are supported");
 
-                columnValues.add(value);
+                if (value instanceof Slice) {
+                    columnValues.add(((Slice) value).toStringUtf8());
+                }
+                else {
+                    columnValues.add(value);
+                }
             }
             partitionColumnValues.add(columnValues.build());
         }
@@ -469,7 +479,40 @@ public class CassandraSplitManager
             @Override
             public boolean apply(CassandraPartition partition)
             {
-                return tupleDomain.overlaps(partition.getTupleDomain());
+                TupleDomain<ConnectorColumnHandle> unslicedDomains = transformSlicesToStrings();
+                return unslicedDomains.overlaps(partition.getTupleDomain());
+            }
+
+            private TupleDomain<ConnectorColumnHandle> transformSlicesToStrings()
+            {
+                if (tupleDomain.getDomains() == null) {
+                    return TupleDomain.none();
+                }
+                HashMap<ConnectorColumnHandle, Domain> result = new HashMap<>(tupleDomain.getDomains().size());
+                for (Map.Entry<ConnectorColumnHandle, Domain> entry : tupleDomain.getDomains().entrySet()) {
+                    ConnectorColumnHandle key = entry.getKey();
+                    Domain domain = entry.getValue();
+                    SortedRangeSet.Builder builder = SortedRangeSet.builder(String.class);
+                    if (domain.getType().isAssignableFrom(Slice.class)) {
+                        for (Range range : domain.getRanges()) {
+                            Marker lowMarker = transformSliceMarkerToStringMarker(range.getLow());
+                            Marker highMarker =  transformSliceMarkerToStringMarker(range.getHigh());
+                            builder.add(new Range(lowMarker, highMarker));
+                        }
+                        SortedRangeSet set = builder.build();
+                        domain = new Domain(set, domain.isNullAllowed());
+                    }
+                    result.put(key, domain);
+                }
+                return TupleDomain.withColumnDomains(result);
+            }
+
+            private Marker transformSliceMarkerToStringMarker(Marker sliceMarker)
+            {
+                if (sliceMarker.getType().isAssignableFrom(Slice.class)) {
+                    return new Marker(new SerializableNativeValue(String.class, ((Slice) sliceMarker.getValue()).toStringUtf8()), sliceMarker.getBound());
+                }
+                return sliceMarker;
             }
         };
     }
